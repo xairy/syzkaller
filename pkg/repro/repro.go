@@ -110,8 +110,7 @@ func Run(crashLog []byte, cfg *mgrconfig.Config, reporter report.Reporter, vmPoo
 	}
 	// The shortest duration is 10 seconds to detect simple crashes (i.e. no races and no hangs).
 	// The longest duration is 6 minutes to catch races and hangs.
-	noOutputTimeout := vm.NoOutputTimeout + time.Minute
-	timeouts := []time.Duration{15 * time.Second, time.Minute, noOutputTimeout}
+	timeouts := []time.Duration{15 * time.Second, time.Minute}
 	switch {
 	case crashTitle == "":
 		crashTitle = "no output/lost connection"
@@ -119,12 +118,12 @@ func Run(crashLog []byte, cfg *mgrconfig.Config, reporter report.Reporter, vmPoo
 		// but theoretically if it's caused by a race it may need the largest timeout.
 		// No output can only be reproduced with the max timeout.
 		// As a compromise we use the smallest and the largest timeouts.
-		timeouts = []time.Duration{15 * time.Second, noOutputTimeout}
+		timeouts = []time.Duration{15 * time.Second}
 	case crashType == report.MemoryLeak:
 		// Memory leaks can't be detected quickly because of expensive setup and scanning.
-		timeouts = []time.Duration{time.Minute, noOutputTimeout}
+		timeouts = []time.Duration{time.Minute}
 	case crashType == report.Hang:
-		timeouts = []time.Duration{noOutputTimeout}
+		timeouts = []time.Duration{}
 	}
 	ctx := &context{
 		cfg:          cfg,
