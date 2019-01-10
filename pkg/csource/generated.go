@@ -3211,6 +3211,7 @@ error:
 }
 static void initialize_netdevices(void)
 {
+	return;
 #if SYZ_EXECUTOR
 	if (!flag_net_devices)
 		return;
