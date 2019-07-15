@@ -113,8 +113,10 @@ func generateHints(compMap CompMap, arg Arg, exec func()) {
 	}
 
 	switch a := arg.(type) {
-	case *ConstArg:
-		checkConstArg(a, compMap, exec)
+	/*
+		case *ConstArg:
+			checkConstArg(a, compMap, exec)
+	*/
 	case *DataArg:
 		checkDataArg(a, compMap, exec)
 	}
