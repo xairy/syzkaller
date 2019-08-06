@@ -35,10 +35,12 @@ func (p *Prog) Mutate(rs rand.Source, ncalls int, ct *ChoiceTable, corpus []*Pro
 	}
 	for stop, ok := false, false; !stop; stop = ok && len(p.Calls) != 0 && r.oneOf(3) {
 		switch {
-		case r.oneOf(5):
-			// Not all calls have anything squashable,
-			// so this has lower priority in reality.
-			ok = ctx.squashAny()
+		/*
+			case r.oneOf(5):
+				// Not all calls have anything squashable,
+				// so this has lower priority in reality.
+				ok = ctx.squashAny()
+		*/
 		case r.nOutOf(1, 100):
 			ok = ctx.splice()
 		case r.nOutOf(20, 31):
