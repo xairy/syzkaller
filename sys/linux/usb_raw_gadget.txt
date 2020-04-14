@@ -1,0 +1,49 @@
+# Copyright 2019 syzkaller project authors. All rights reserved.
+# Use of this source code is governed by Apache 2 LICENSE that can be found in the LICENSE file.
+
+include <linux/types.h>
+include <linux/byteorder/generic.h>
+
+include <uapi/linux/usb/raw_gadget.h>
+
+resource usb_raw_fd[fd]
+resource usb_raw_ep[intptr]: -1
+
+open$usb_raw(file ptr[in, string["/dev/raw-gadget"]], flags flags[open_flags], mode flags[open_mode]) usb_raw_fd
+
+ioctl$USB_RAW_IOCTL_INIT(fd usb_raw_fd, cmd const[USB_RAW_IOCTL_INIT], arg ptr[in, usb_raw_init])
+ioctl$USB_RAW_IOCTL_RUN(fd usb_raw_fd, cmd const[USB_RAW_IOCTL_RUN], arg const[0])
+ioctl$USB_RAW_IOCTL_EP0_READ(fd usb_raw_fd, cmd const[USB_RAW_IOCTL_EP0_READ], arg ptr[inout, usb_raw_event])
+ioctl$USB_RAW_IOCTL_EP0_WRITE(fd usb_raw_fd, cmd const[USB_RAW_IOCTL_EP0_WRITE], arg ptr[in, usb_raw_ep_io])
+ioctl$USB_RAW_IOCTL_EP_ENABLE(fd usb_raw_fd, cmd const[USB_RAW_IOCTL_EP_ENABLE], arg ptr[in, usb_endpoint_desc]) usb_raw_ep
+ioctl$USB_RAW_IOCTL_EP_DISABLE(fd usb_raw_fd, cmd const[USB_RAW_IOCTL_EP_DISABLE], arg usb_raw_ep)
+ioctl$USB_RAW_IOCTL_EP_WRITE(fd usb_raw_fd, cmd const[USB_RAW_IOCTL_EP0_WRITE], arg ptr[in, usb_raw_ep_io])
+ioctl$USB_RAW_IOCTL_EP_READ(fd usb_raw_fd, cmd const[USB_RAW_IOCTL_EP0_READ], arg ptr[inout, usb_raw_ep_io])
+ioctl$USB_RAW_IOCTL_CONFIGURE(fd usb_raw_fd, cmd const[USB_RAW_IOCTL_CONFIGURE], arg const[0])
+ioctl$USB_RAW_IOCTL_VBUS_DRAW(fd usb_raw_fd, cmd const[USB_RAW_IOCTL_VBUS_DRAW], arg intptr)
+ioctl$USB_RAW_IOCTL_EP_SET_HALT(fd usb_raw_fd, cmd const[USB_RAW_IOCTL_EP_SET_HALT], arg usb_raw_ep)
+ioctl$USB_RAW_IOCTL_EP_CLEAR_HALT(fd usb_raw_fd, cmd const[USB_RAW_IOCTL_EP_CLEAR_HALT], arg usb_raw_ep)
+ioctl$USB_RAW_IOCTL_EP_SET_WEDGE(fd usb_raw_fd, cmd const[USB_RAW_IOCTL_EP_SET_WEDGE], arg usb_raw_ep)
+
+usb_raw_init {
+	speed	int64
+	driver	ptr[in, string["dummy_udc"]]
+	device	ptr[in, string["dummy_udc.0"]]
+}
+
+usb_raw_event {
+	type	int32
+	length	int32
+	data	array[int8]
+}
+
+usb_raw_ep_io {
+	ep	usb_raw_ep
+	flags	int16
+	length	len[data, int32]
+	data	array[int8]
+}
+
+usb_endpoint_desc {
+	data	array[int8]
+}
