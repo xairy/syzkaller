@@ -104,114 +104,152 @@ Syzkaller uses a list of hardcoded [USB IDs](/sys/linux/init_vusb_ids.go) that a
 ## Running reproducers with Raspberry Pi Zero W
 
 It's possible to run syzkaller USB reproducers by using a Linux board plugged into a physical USB host.
+
 These instructions describe how to set this up on a Raspberry Pi Zero W, but any other board that has a working USB UDC driver can be used as well.
 
-1. Download `raspbian-stretch-lite.img` from [here](https://www.raspberrypi.org/downloads/raspbian/).
+1. Download the latest `Raspberry Pi OS with desktop` image from [here](https://www.raspberrypi.com/software/operating-systems/).
 
-2. Flash the image into an SD card as described [here](https://www.raspberrypi.org/documentation/installation/installing-images/linux.md).
-
-3. Enable UART as described [here](https://www.raspberrypi.org/documentation/configuration/uart.md).
-
-4. Boot the board and get a shell over UART as described [here](https://learn.adafruit.com/raspberry-pi-zero-creation/give-it-life). You'll need a USB-UART module for that. The default login credentials are `pi` and `raspberry`.
-
-5. Get the board connected to the internet (plug in a USB Ethernet adapter or follow [this](https://www.raspberrypi.org/documentation/configuration/wireless/wireless-cli.md)).
-
-6. Update: `sudo apt-get update && sudo apt-get dist-upgrade && sudo rpi-update && sudo reboot`.
-
-7. Install useful packages: `sudo apt-get install vim git`.
-
-8. Download and install Go:
+2. Extract and flash the downloaded image into an SD card:
 
     ``` bash
-    curl https://dl.google.com/go/go1.14.2.linux-armv6l.tar.gz -o go.linux-armv6l.tar.gz
-    tar -xf go.linux-armv6l.tar.gz
-    mv go goroot
-    mkdir gopath
-    export GOPATH=~/gopath
-    export GOROOT=~/goroot
-    export PATH=~/goroot/bin:$PATH
-    export PATH=~/gopath/bin:$PATH
+    unxz 2024-03-15-raspios-bookworm-armhf.img.xz
+    sudo dd if=2024-03-15-raspios-bookworm-armhf.img of=/dev/sdb bs=4M conv=fsync
     ```
 
-9. Download syzkaller, apply the patch below and build `syz-executor`:
+3. [Create](https://forums.raspberrypi.com/viewtopic.php?t=333248&p=1994926#p1994926) a user `pi` with the password `raspberry` by creating a `bootfs/userconf.txt` file with the following contents:
 
-``` c
-diff --git a/executor/common_usb_linux.h b/executor/common_usb_linux.h
-index 451b2a7b..64af45c7 100644
---- a/executor/common_usb_linux.h
-+++ b/executor/common_usb_linux.h
-@@ -292,9 +292,7 @@ static volatile long syz_usb_connect_impl(uint64 speed, uint64 dev_len, const ch
+   ```
+   pi:$6$c70VpvPsVNCG0YR5$l5vWWLsLko9Kj65gcQ8qvMkuOoRkEagI90qi3F/Y7rm8eNYZHW8CY6BOIKwMH7a3YYzZYL90zf304cAHLFaZE0
+   ```
 
-        // TODO: consider creating two dummy_udc's per proc to increace the chance of
-        // triggering interaction between multiple USB devices within the same program.
--       char device[32];
--       sprintf(&device[0], "dummy_udc.%llu", procid);
--       int rv = usb_raw_init(fd, speed, "dummy_udc", &device[0]);
-+       rv = usb_raw_init(fd, speed, "20980000.usb", "20980000.usb");
-        if (rv < 0) {
-                debug("syz_usb_connect: usb_raw_init failed with %d\n", rv);
-                return rv;
-```
+4. [Enable UART](https://www.raspberrypi.com/documentation/computers/config_txt.html#enable_uart) by appending `enable_uart=1` to the end of the `bootfs/config.txt` file.
 
-``` bash
-git clone https://github.com/google/syzkaller
-cd syzkaller
-# Put the patch above into ./syzkaller.patch
-git apply ./syzkaller.patch
-make executor
-mkdir ~/syz-bin
-cp bin/linux_arm/syz-executor ~/syz-bin/
-```
+5. Boot the board and get a shell over UART as described [here](https://learn.adafruit.com/raspberry-pi-zero-creation/give-it-life).
 
-10. Build `syz-execprog` on your host machine for arm32 with `make TARGETARCH=arm execprog` and copy to `~/syz-bin` onto the SD card. You may try building syz-execprog on the Raspberry Pi itself, but that worked poorly for me due to large memory consumption during the compilation process.
+    For this step, you will need a USB-UART adapter.
 
-11. Make sure that you can now execute syzkaller programs:
+    Note that getting the login prompt over UART takes a few minutes when you boot the board for the first time.
+
+6. Get the board connected to the internet (plug in a USB Ethernet adapter or use Wi-Fi).
+
+7. Update: `sudo apt-get update && sudo apt-get dist-upgrade && sudo rpi-update && sudo reboot`.
+
+8. Install useful packages: `sudo apt-get install vim git`.
+
+9. [Install](https://www.raspberrypi.com/documentation/computers/linux_kernel.html#kernel-headers) Linux kernel headers:
+
+   ``` bash
+   sudo apt install linux-headers-rpi-{v6,v7,v7l}
+   ```
+
+10. Setup the dwc2 USB gadget driver:
 
     ``` bash
-    cat socket.log
-    r0 = socket$inet_tcp(0x2, 0x1, 0x0)
-    sudo ./syz-bin/syz-execprog -executor ./syz-bin/syz-executor -threaded=0 -collide=0 -procs=1 -enable='' -debug socket.log
-    ```
-
-12. Setup the dwc2 USB gadget driver:
-
-    ```
-    echo "dtoverlay=dwc2" | sudo tee -a /boot/config.txt
+    echo "dtoverlay=dwc2" | sudo tee -a /boot/firmware/config.txt
     echo "dwc2" | sudo tee -a /etc/modules
     sudo reboot
     ```
+11. Clone the Raw Gadget [repository](https://github.com/xairy/raw-gadget).
 
-13. Get Linux kernel headers following [this](https://github.com/notro/rpi-source/wiki).
+12. Build and load the USB Raw Gadget module following [this](https://github.com/xairy/raw-gadget/tree/master/raw_gadget).
 
-14. Download and build the USB Raw Gadget module following [this](https://github.com/xairy/raw-gadget/tree/master/raw_gadget).
+    Depending on the used kernel version, you might need undo the revert `patches/usb_gadget_probe_driver.patch` to build the module.
 
-15. Insert the module with `sudo insmod raw_gadget.ko`.
+13. Connect the Raspberry Pi USB OTG connector (titled `USB` on the board) to a USB host.
 
-16. [Download](https://raw.githubusercontent.com/xairy/raw-gadget/master/examples/keyboard.c), build, and run the [keyboard emulator program](https://github.com/xairy/raw-gadget/tree/master/examples):
+    You will need to unplug the USB Ethernet adapter for this step if you have it plugged in.
+    You will also need to replug it back in for any further steps that require downloading things.
+
+14. Build and run the Raw Gadget [keyboard emulator program](https://github.com/xairy/raw-gadget/tree/master/examples):
 
     ``` bash
-    # Get keyboard.c
-    gcc keyboard.c -o keyboard
+    cd raw-gadget/examples
+    make
     sudo ./keyboard 20980000.usb 20980000.usb
-    # Make sure you see the letter 'x' being entered on the host.
     ```
 
-17. You should now be able to execute syzkaller USB programs:
+15. Make sure that you see the letter `x` being entered on the host.
+
+    With this step, you confirmed that Raw Gadget is working properly.
+
+16. On host, download syzkaller and apply the patch below:
+
+    ``` bash
+    git clone https://github.com/google/syzkaller
+    cd syzkaller
+    # Put the patch below into /tmp/syzkaller.patch
+    git apply /tmp/syzkaller.patch
+    ```
+
+    Patch:
+
+    ``` c
+    diff --git a/executor/common_usb_linux.h b/executor/common_usb_linux.h
+    index b706663f8..f06fd5e3b 100644
+    --- a/executor/common_usb_linux.h
+    +++ b/executor/common_usb_linux.h
+    @@ -303,9 +303,7 @@ static volatile long syz_usb_connect_impl(uint64 speed, uint64 dev_len, const ch
+     
+            // TODO: consider creating two dummy_udc's per proc to increace the chance of
+            // triggering interaction between multiple USB devices within the same program.
+    -       char device[32];
+    -       sprintf(&device[0], "dummy_udc.%llu", procid);
+    -       int rv = usb_raw_init(fd, speed, "dummy_udc", &device[0]);
+    +       int rv = usb_raw_init(fd, speed, "20980000.usb", "20980000.usb");
+            if (rv < 0) {
+                    debug("syz_usb_connect: usb_raw_init failed with %d\n", rv);
+                    return rv;
+    ```
+
+17. Cross-compile `syz-execprog` and `syz-executor`:
+
+    ``` bash
+    # Update '...' below.
+    alias syz-env=".../syzkaller/tools/syz-env"
+    syz-env make generate
+    syz-env GOARM=5 make TARGETARCH=arm execprog
+    syz-env make TARGETARCH=arm executor
+    ```
+
+    Note that `syz-env` requires Docker installed and takes a while to set up a container when called for the first time.
+
+18. Copy `./bin/linux_arm/syz-execprog` and `./bin/linux_arm/syz-executor` onto Raspberry Pi.
+
+    One option to copy the files is to enable the SSH server on the Raspbery Pi [via](https://www.raspberrypi.com/documentation/computers/remote-access.html#ssh) `sudo raspi-config`.
+
+    Another is to copy the files onto the SD card.
+
+19. On Raspberry Pi, check that you can execute a simple syzkaller program:
+
+    ``` bash
+    $ cat socket.log
+    r0 = socket$inet_tcp(0x2, 0x1, 0x0)
+    $ sudo ./syz-execprog -executor ./syz-executor -threaded=0 -collide=0 -procs=1 -enable='' -debug socket.log
+    ```
+
+    Make sure that you see something like:
+
+    ```
+    #0 [134ms] -> socket$inet_tcp(0x2, 0x1, 0x0)
+    #0 [134ms] <- socket$inet_tcp=0x3
+    ```
+
+20. You should now be able to execute syzkaller USB programs:
 
     ``` bash
     $ cat usb.log
     r0 = syz_usb_connect(0x0, 0x24, &(0x7f00000001c0)={{0x12, 0x1, 0x0, 0x8e, 0x32, 0xf7, 0x20, 0xaf0, 0xd257, 0x4e87, 0x0, 0x0, 0x0, 0x1, [{{0x9, 0x2, 0x12, 0x1, 0x0, 0x0, 0x0, 0x0, [{{0x9, 0x4, 0xf, 0x0, 0x0, 0xff, 0xa5, 0x2c}}]}}]}}, 0x0)
-    $ sudo ./syz-bin/syz-execprog -slowdown 3 -executor ./syz-bin/syz-executor -threaded=0 -collide=0 -procs=1 -enable='' -debug usb.log
+    $ sudo ./syz-execprog -executor ./syz-executor -slowdown=3 -threaded=0 -collide=0 -procs=1 -enable='' -debug usb.log
     ```
 
     The `slowdown` parameter is a scaling factor which can be used for increasing the syscall timeouts.
 
-18. Steps 19 through 21 are optional. You may use a UART console and a normal USB cable instead of ssh and Zero Stem.
+21. The following steps optional. You may use a UART console and a normal USB cable instead of SSH and Zero Stem.
 
-19. Follow [this](https://www.raspberrypi.org/documentation/configuration/wireless/access-point.md) to set up a Wi-Fi hotspot.
+22. Set up a Wi-Fi hotspot.
 
-20. Follow [this](https://www.raspberrypi.org/documentation/remote-access/ssh/) to enable ssh.
+23. Enable SSH if you haven't yet.
 
-21. Optionally solder [Zero Stem](https://zerostem.io/) onto your Raspberry Pi Zero W.
+24. Optionally solder [Zero Stem](https://zerostem.io/) onto your Raspberry Pi Zero W.
 
-21. You can now connect the board to an arbitrary USB port, wait for it to boot, join its Wi-Fi network, ssh onto it, and run arbitrary syzkaller USB programs.
+25. You can now connect the board to an arbitrary USB port, wait for it to boot, join its Wi-Fi network, `ssh` onto it, and run arbitrary syzkaller USB programs.
